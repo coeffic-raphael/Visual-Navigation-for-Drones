@@ -172,6 +172,7 @@ We tested several ideas that did not become the official pipeline:
 | Rotating/cropping reference frames | Did not beat the current best result |
 | Direction-change penalty | Did not improve the retained metrics enough to justify keeping it as default |
 | DINOv2 VLAD aggregation | Improved raw candidate quality, but did not beat the retained final Motion-Viterbi result |
+| Optical flow dead reckoning | SuperPoint + LightGlue between consecutive query frames estimates speed correctly (785.6 m total path vs 797.3 m GNSS, ~1.5% error), but without heading the cumulative direction error reaches 712 m after 115 frames. Dead reckoning is only viable if a magnetic heading or an initial heading estimate from retrieval is available. See `src/frame_dead_reckoning.py`. |
 
 The repository has been cleaned so these attempts do not appear as the main path.
 

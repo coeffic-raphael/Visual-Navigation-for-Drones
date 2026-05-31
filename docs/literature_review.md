@@ -2,104 +2,151 @@
 
 ## Scope
 
-The assignment asks for recent algorithms and tools for low-altitude drone visual navigation, with emphasis on open-source "paper with code" methods. Our implementation focuses on the part of the problem where a new GNSS-denied video frame must be localized against a preprocessed reference flight.
+The assignment asks for recent algorithms and tools for low-altitude drone visual navigation (20–200 m), with emphasis on open-source "paper with code" methods. The core problem is GNSS-denied localization: given a preprocessed reference flight with known positions, estimate the camera-center coordinate of each new query frame without using GNSS at inference time.
 
-For that reason, the most relevant family of methods is visual place recognition (VPR): build a database of reference images with known positions, then retrieve the closest visual match for each query image.
+The most natural framing for this problem is **visual place recognition (VPR)**: build a database of reference images with known ground-projected coordinates, then retrieve the closest visual match for each query image. This literature review covers the VPR methods that are most relevant to low-altitude drone navigation, starting from the foundational work and arriving at the approach used in this project.
 
-## Main Paper: AnyLoc
+---
 
-The main paper used in this project is **AnyLoc: Towards Universal Visual Place Recognition** by Keetha et al. The paper and code are available from:
+## 1. NetVLAD — Foundational Learning-Based VPR
 
-- Paper: https://anyloc.github.io/assets/AnyLoc.pdf
-- Repository: https://github.com/AnyLoc/AnyLoc
+**Paper:** Arandjelovic et al., "NetVLAD: CNN Features for Image Retrieval," CVPR 2016.
+**Code:** https://github.com/Relja/netvlad
 
-AnyLoc is relevant because it addresses the exact type of decision we faced: should we train a place-recognition model on our own drone data, or should we use frozen general-purpose visual features? AnyLoc argues for the second option. It uses features extracted from large self-supervised foundation models, especially DINO/DINOv2, without task-specific VPR finetuning. The paper evaluates across many environments, including aerial data, and shows that frozen foundation features combined with unsupervised aggregation can be competitive and more general than methods trained for a specific VPR dataset.
+NetVLAD is the baseline against which all modern VPR methods are measured. It introduced end-to-end learning of a VLAD-style descriptor for place recognition, trained with weakly supervised contrastive learning on the Pittsburgh-250k dataset (urban driving imagery). The key contribution is the differentiable VLAD layer that aggregates local CNN features into a compact global descriptor.
 
-The conceptual AnyLoc pipeline is:
+NetVLAD established the dominant paradigm for the following decade: train a model on large-scale GPS-tagged urban data, then retrieve nearest neighbors at test time. This approach works well in urban environments similar to the training set, but degrades sharply when the test environment is out-of-distribution.
 
-1. Extract dense ViT patch features from a frozen foundation model.
-2. Aggregate those local features into a global image descriptor.
-3. Compare query descriptors with database descriptors.
-4. Retrieve the most visually similar reference images.
+In the AnyLoc benchmark (Table IV), NetVLAD achieves only 19.7% R@1 on Nardo-Air (a GNSS-denied aerial drone dataset at 50 m altitude) — compared to 76.1% for AnyLoc-VLAD-DINOv2. This directly motivates the training-free approach used in this project: our reference flight is a single campus, not a large urban dataset, so training a NetVLAD-style model on it would overfit and not generalize.
 
-AnyLoc studies aggregation methods such as global average pooling, GeM, and VLAD. The paper's key lesson for us is that training on our own SRT-labelled video is not necessary and would be suspicious for evaluation if the same area is used for both reference and test. A frozen model makes the experiment cleaner: the reference flight is a map, not a training set.
+---
 
-## How We Used AnyLoc
+## 2. MixVPR and CosPlace — Current Supervised SOTA
 
-We did not integrate the full AnyLoc repository as-is. Instead, we implemented an AnyLoc-style pipeline that fits the assignment:
+**MixVPR:** Ali-bey et al., "MixVPR: Feature Mixing for Visual Place Recognition," WACV 2023.
+**Code:** https://github.com/amaralibey/MixVPR
 
-- Frozen DINOv2 descriptors from drone frames.
-- A reference database built from `v11`, `v12`, and `v13`.
-- A query flight `v14`, evaluated only after matching.
-- No supervised training or finetuning on our drone videos.
-- A coordinate output, not just a retrieved image ID.
+**CosPlace:** Berton et al., "Rethinking Visual Geo-Localization for Large-Scale Applications," CVPR 2022.
+**Code:** https://github.com/gmberton/CosPlace
 
-Our final retained descriptor is DINOv2 mean pooling over patch tokens. We also tested more AnyLoc-like VLAD aggregation. VLAD improved the raw candidate pool but did not improve the final temporally selected trajectory in our current setup, so it is described as an experiment rather than the official pipeline.
+MixVPR and CosPlace represent the state of the art in supervised VPR. MixVPR uses an MLP-based feature mixer trained on the GSV-Cities dataset (530,000 images, 62,000 places worldwide). CosPlace uses classification-based learning on the San Francisco XL dataset (40 million images with GPS and heading).
 
-## DINOv2
+Both methods achieve strong performance on urban benchmarks: MixVPR reaches 83.9% average R@1 across structured environments in the AnyLoc evaluation. However, their performance collapses on aerial and unstructured environments: CosPlace achieves **0% R@1** on Nardo-Air (all queries incorrectly matched to a handful of visually similar fields), and MixVPR reaches only 32.4%. This failure demonstrates that large-scale urban training does not transfer to low-altitude drone imagery.
 
-DINOv2 is the frozen visual backbone used by our pipeline:
+For this project, supervised methods are additionally inappropriate because the reference and test flights cover the same campus area: training on the reference flight would risk overfitting to the evaluation scene.
 
-- Paper/code: https://github.com/facebookresearch/dinov2
+---
 
-DINOv2 is useful here because it provides strong self-supervised features without training on the target task. For each frame, we extract ViT patch tokens and aggregate them into one descriptor. This descriptor becomes the visual signature used for large-scale retrieval.
+## 3. AnyLoc — Main Method
 
-Advantages:
+**Paper:** Keetha et al., "AnyLoc: Towards Universal Visual Place Recognition," RA-L / ICRA 2024.
+**Code:** https://github.com/AnyLoc/AnyLoc
+**PDF:** https://anyloc.github.io/assets/AnyLoc.pdf
 
-- No GNSS labels are needed to train the model.
-- No domain-specific finetuning is required.
-- It is robust enough to retrieve visually similar drone viewpoints.
+AnyLoc is the central paper of this project. It proposes a universal, training-free VPR system based on frozen foundation model features, and evaluates it across 12 diverse datasets including aerial drone environments.
 
-Limitations:
+### Core pipeline
 
-- A single global descriptor can confuse nearby places with similar texture, roads, trees, or buildings.
-- It is not a geometric method by itself; it says "this looks similar", not "this pose is physically consistent".
+AnyLoc answers four design questions sequentially:
 
-## LightGlue And SuperPoint
+**A. Which foundation model?** Among joint-embedding methods (DINO, DINOv2), contrastive methods (CLIP), and masked autoencoders (MAE), DINOv2 provides the best features for VPR. MAE, which only has token-level supervision, performs the worst. DINO and DINOv2 use global image-level self-supervision that captures long-range patterns essential for place discrimination.
 
-The second important open-source method is LightGlue:
+**B. Which features to extract?** Rather than using the CLS token (one vector per image), AnyLoc extracts per-pixel patch tokens from intermediate ViT layers. The paper shows that the **value facet of layer 31** of DINOv2 ViT-G14 gives the sharpest contrast in similarity maps, which is critical for discriminating visually similar places. Earlier layers have a high positional encoding bias; deeper value facets have the best spatial discriminability.
 
-- Paper/code: https://github.com/cvg/LightGlue
+**C. How to aggregate?** AnyLoc compares global average pooling (GAP), generalized mean pooling (GeM), and soft/hard-assignment VLAD. The results are decisive (Table VII of the paper):
 
-LightGlue performs local feature matching efficiently. In our pipeline, DINOv2 proposes a small top-k list of candidate reference frames. LightGlue then verifies whether the query and candidate share enough local keypoint correspondences. This helps reject some false positives from global DINO retrieval.
+| Method | Baidu R@1 | Oxford R@1 | Descriptor size |
+| --- | ---: | ---: | ---: |
+| GAP (= mean pooling) | 41.6% | 78.5% | 1536 |
+| GeM | 50.1% | 92.2% | 1536 |
+| VLAD (hard) | 71.5% | 94.8% | 49152 |
 
-We use SuperPoint keypoints with LightGlue. The local matching score is summarized with:
+Hard-assignment VLAD outperforms mean pooling by 30% on indoor data. This is the main quantitative gap between what this project implements and the full AnyLoc recommendation.
 
-- number of matches,
-- RANSAC inliers,
-- inlier ratio.
+**D. Vocabulary construction?** For VLAD, the cluster vocabulary should be domain-specific. For aerial data specifically, using an aerial-domain vocabulary improves R@1 by 19% over a global vocabulary (Table V of the paper).
 
-These values are used in reranking and temporal path selection.
+### Aerial results
 
-## Temporal Motion Prior
+The Nardo-Air dataset in AnyLoc closely mirrors our problem: GNSS-denied drone localization where query images are matched against a reference map. AnyLoc-VLAD-DINOv2 achieves 76.1% R@1 on Nardo-Air, compared to 0% for CosPlace and 32.4% for MixVPR. This result is the direct justification for using frozen DINOv2 features in this project.
 
-The assignment is about a flight sequence, not isolated images. Consecutive frames should not jump randomly across the map. We therefore add a temporal Viterbi selector over the DINOv2 + LightGlue candidates.
+### What this project uses vs. full AnyLoc
 
-This stage is not a learned model. It is a sequence optimizer:
+| Component | AnyLoc recommendation | This project |
+| --- | --- | --- |
+| Backbone | DINOv2 ViT-G14 | DINOv2 ViT-S14 (lighter) |
+| Layer / facet | Layer 31, value facet | Mean over all patch tokens |
+| Aggregation | VLAD (hard, 32 clusters) | Mean pooling |
+| Vocabulary | Domain-specific (aerial) | Not applicable (no VLAD) |
 
-- visual score rewards high DINO similarity and good LightGlue matching,
-- transition score penalizes implausibly large jumps between consecutive estimated positions,
-- the selected path is the minimum-cost sequence through the candidate graph.
+Mean pooling was retained because VLAD aggregation, while improving raw retrieval candidates, did not improve the final temporally selected trajectory in our experiments. This likely reflects an interaction between vocabulary quality and the temporal reranking stage, and is noted as a future improvement.
 
-This is what turns independent frame retrieval into a navigation trajectory.
+---
 
-## Relation To The Assignment
+## 4. DINOv2
 
-The assignment asks for a platform for drone optical navigation and an edited solution for the suggested videos. In this project, the "platform" is an adapted open-source VPR stack:
+**Paper:** Oquab et al., "DINOv2: Learning Robust Visual Features Without Supervision," 2023.
+**Code:** https://github.com/facebookresearch/dinov2
 
-- DINOv2 as the frozen foundation feature extractor,
-- AnyLoc as the methodological basis for training-free place recognition,
-- LightGlue as local geometric verification,
-- our SRT parser, camera-center projection, and trajectory selector around those components.
+DINOv2 is the frozen visual backbone used in this project. It trains a Vision Transformer on a large curated dataset (LVD-142M) with joint image-level and token-level self-supervised losses. The key property for VPR is that DINOv2 patch tokens encode rich semantic and spatial information without any task-specific supervision.
 
-The output is not only a classification or retrieval score. The final CSV and KML estimate the GPS coordinate of the point at the center of each query video frame.
+In our pipeline, DINOv2 patch tokens are extracted from each frame and mean-pooled into a single global descriptor. This descriptor serves as the visual signature for large-scale retrieval. Because DINOv2 is frozen and requires no training on the target data, the reference videos function as a pure database rather than a training set.
 
-## Why We Did Not Train A Model
+---
 
-Training a model on the same site would risk overfitting to the assignment data and would make the evaluation less meaningful. AnyLoc explicitly motivates training-free VPR using pretrained foundation features. We follow that philosophy: the reference videos are used as a map/database, not as supervised training data.
+## 5. SuperPoint
 
-## Limitations And Future Work
+**Paper:** DeTone et al., "SuperPoint: Self-Supervised Interest Point Detection and Description," CVPRW 2018.
+**Code (via LightGlue):** https://github.com/cvg/LightGlue
 
-Our retained implementation uses mean-pooled DINOv2 patch descriptors, which are simpler than the strongest AnyLoc settings. We tested VLAD-style aggregation and found better raw retrieval candidates, but the final trajectory did not improve yet. A future improvement would be to revisit VLAD with better vocabulary selection, tune candidate fusion, and use camera yaw/gimbal metadata when available.
+SuperPoint is a self-supervised keypoint detector and descriptor trained on homographic pairs of synthetic and real images. It detects repeatable interest points and computes compact descriptors that are robust to viewpoint and illumination changes.
 
-The remaining weak point is viewpoint ambiguity. Drone images from nearby locations often share the same visual elements from slightly different angles, so the correct candidate may be visually close but not ranked first. This is why the debug page remains important: it shows query frames, top candidates, LightGlue scores, and the local map position of the retrieved matches.
+In this project, SuperPoint is used as the keypoint frontend for LightGlue local verification. It is also used in the frame-to-frame dead reckoning experiment to estimate pixel displacement between consecutive query frames.
+
+---
+
+## 6. LightGlue
+
+**Paper:** Lindenberger et al., "LightGlue: Local Feature Matching at Light Speed," ICCV 2023.
+**Code:** https://github.com/cvg/LightGlue
+
+LightGlue is a Transformer-based local feature matcher that pairs SuperPoint keypoints between two images. It is a lighter and faster successor to SuperGlue, with adaptive depth that terminates early when matches are sufficiently confident.
+
+In this project, LightGlue verifies the small top-k candidate list returned by DINOv2 global retrieval. For each query frame, DINOv2 retrieves 6–10 reference candidates; LightGlue scores each pair by number of matches, RANSAC inliers, and inlier ratio. This local geometric verification step reduces the mean position error from 27.28 m (DINOv2 alone) to 19.15 m.
+
+The hierarchical structure of our pipeline — global retrieval followed by local verification — mirrors the HLoc framework (Sarlin et al., CVPR 2019), which established this two-stage approach as the standard for large-scale visual localization.
+
+---
+
+## 7. Temporal Sequence Localization
+
+The assignment is about a continuous flight, not isolated frames. A sequence-aware localization method significantly outperforms independent per-frame retrieval because consecutive frames should not jump randomly across the map.
+
+The approach used in this project is a **Viterbi path selector** over the DINOv2 + LightGlue candidate lists:
+
+- The visual score rewards high DINOv2 similarity and strong LightGlue matching.
+- The transition score penalizes jumps larger than the expected drone speed.
+- The Viterbi algorithm selects the minimum-cost consistent path through the candidate graph.
+
+This is conceptually related to **SeqSLAM** (Milford and Wyeth, ICRA 2012), which showed that enforcing sequential consistency over a sliding window dramatically improves localization recall even with weak per-frame descriptors. The key difference is that our method works with a sparse top-k candidate graph rather than a dense similarity matrix.
+
+Adding the Viterbi step reduces the mean error from 19.15 m (LightGlue reranking) to 18.83 m, with the main gain coming from reducing maximum errors (72.53 m vs 180.52 m for DINOv2 alone).
+
+---
+
+## 8. Why We Did Not Train a Model
+
+Training a model on the reference flights would be conceptually circular: the same area is used for both building the reference database and evaluating the query. AnyLoc explicitly motivates training-free VPR to avoid this problem. A frozen model makes the evaluation clean: the reference flight is a map, not a training set.
+
+Additionally, the failure of CosPlace (0% on Nardo-Air) and the poor performance of MixVPR on aerial data confirm that urban-trained supervised methods cannot be applied out-of-the-box to low-altitude drone imagery without domain adaptation — which would require drone-specific labeled data that is not available here.
+
+---
+
+## 9. Limitations and Future Directions
+
+The main limitation of the retained pipeline is the gap between mean pooling (what we use) and VLAD with an aerial-domain vocabulary (what AnyLoc recommends). The paper's Table IV suggests this gap could be significant for aerial data: AnyLoc-VLAD-DINOv2 outperforms AnyLoc-GeM-DINOv2 by 0% vs 76.1% on Nardo-Air (GeM fails on this dataset while VLAD succeeds).
+
+Other open directions include:
+
+- **Camera heading as a prior**: the dead reckoning experiment in this project shows that optical flow can estimate drone speed accurately (~1.5% error over 115 frames) but accumulates large directional error without a heading source. Adding a magnetic heading reading would enable hybrid geometry + vision localization.
+- **ViT-G14 with layer 31 value facet**: the current implementation uses ViT-S14 with mean pooling. Switching to the AnyLoc-recommended configuration would likely improve retrieval at the cost of higher compute.
+- **VLAD with aerial vocabulary**: building a VLAD vocabulary from the three reference flights (v11, v12, v13) and using it for both reference encoding and query encoding is the most direct improvement aligned with the AnyLoc paper.

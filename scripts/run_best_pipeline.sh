@@ -55,3 +55,14 @@ BASE="outputs/anyloc/dji_mini3_cross_v11_v12_v13_to_v14_1fps"
   --reference-manifest data/processed/DJI_v12_frame_manifest_1fps.csv \
   --reference-manifest data/processed/DJI_v13_frame_manifest_1fps.csv \
   --output outputs/maps/dji_mini3_v14_google_earth_best_motion_viterbi.kml
+
+mkdir -p outputs/figures
+
+"${PYTHON_BIN}" src/preliminary_experiment_report.py \
+  data/processed/DJI_v14_ground_projection_60deg.csv \
+  data/processed/DJI_v14_frame_manifest_1fps.csv \
+  "${BASE}_motion_viterbi_top6_acc0_results.csv" \
+  data/processed/DJI_v11_frame_manifest_1fps.csv \
+  data/processed/DJI_v12_frame_manifest_1fps.csv \
+  data/processed/DJI_v13_frame_manifest_1fps.csv \
+  --output outputs/figures/preliminary_experiment_v14.svg

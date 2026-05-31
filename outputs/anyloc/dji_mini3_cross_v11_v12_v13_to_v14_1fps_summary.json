@@ -4,8 +4,8 @@
   "median_error_m": 20.040586345433592,
   "p90_error_m": 57.63404556542074,
   "max_error_m": 180.52242022040278,
-  "oracle_top_k_mean_error_m": 16.645516868717444,
-  "oracle_top_k_median_error_m": 12.900258960506688,
+  "oracle_top_k_mean_error_m": 13.802121304973566,
+  "oracle_top_k_median_error_m": 9.532983901360225,
   "reference_hits": {
     "v13": 28,
     "v12": 57,

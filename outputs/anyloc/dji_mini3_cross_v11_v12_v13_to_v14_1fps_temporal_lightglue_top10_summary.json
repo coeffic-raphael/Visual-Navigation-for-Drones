@@ -3,11 +3,11 @@
   "dino_mean_error_m": 27.27823659444422,
   "dino_median_error_m": 20.040586345433592,
   "dino_p90_error_m": 57.63404556542074,
-  "temporal_mean_error_m": 19.49276217189001,
-  "temporal_median_error_m": 15.214161450526598,
-  "temporal_p90_error_m": 39.99308795454729,
-  "temporal_max_error_m": 70.60029165844975,
-  "improved_queries": 58,
+  "temporal_mean_error_m": 21.727106103881056,
+  "temporal_median_error_m": 15.429881573784428,
+  "temporal_p90_error_m": 51.19783202930453,
+  "temporal_max_error_m": 87.68962967075151,
+  "improved_queries": 57,
   "worsened_queries": 35,
-  "unchanged_queries": 22
+  "unchanged_queries": 23
 }

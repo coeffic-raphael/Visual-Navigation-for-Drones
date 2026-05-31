@@ -141,6 +141,34 @@ The script recomputes:
 2. LightGlue verification of DINOv2 candidates.
 3. Motion-Viterbi selection of a coherent estimated path.
 4. Google Earth KML export.
+5. Preliminary experiment SVG — three-path comparison (direction 4).
+
+## Preliminary Experiment (Direction 4)
+
+The preliminary experiment answers direction 4: given a video and the camera angle, compute the expected ground-center path and compare it with the pipeline estimate and the SRT-captured path.
+
+Run it standalone (after the pipeline has produced results):
+
+```bash
+python src/preliminary_experiment_report.py \
+  data/processed/DJI_v14_ground_projection_60deg.csv \
+  data/processed/DJI_v14_frame_manifest_1fps.csv \
+  outputs/anyloc/dji_mini3_cross_v11_v12_v13_to_v14_1fps_motion_viterbi_top6_acc0_results.csv \
+  data/processed/DJI_v11_frame_manifest_1fps.csv \
+  data/processed/DJI_v12_frame_manifest_1fps.csv \
+  data/processed/DJI_v13_frame_manifest_1fps.csv \
+  --output outputs/figures/preliminary_experiment_v14.svg
+```
+
+Output: `outputs/figures/preliminary_experiment_v14.svg`
+
+The figure overlays three paths in local XY coordinates (metres):
+
+- **Blue dashed** — drone GNSS trajectory from SRT telemetry
+- **Green** — ground-truth camera-center, computed geometrically from altitude + 60° camera angle + trajectory heading
+- **Red** — estimated camera-center from the DINOv2 + LightGlue + Motion Viterbi pipeline
+
+Grey lines connect each ground-truth point to its estimate; darker = larger error.
 
 ## Real-Time Interpretation
 

@@ -17,5 +17,8 @@
   "transition_weight": 4.0,
   "acceleration_scale_m": 20.0,
   "acceleration_weight": 0.0,
+  "direction_scale_degrees": 45.0,
+  "direction_weight": 0.0,
+  "min_direction_step_m": 3.0,
   "candidate_limit": 6
 }
