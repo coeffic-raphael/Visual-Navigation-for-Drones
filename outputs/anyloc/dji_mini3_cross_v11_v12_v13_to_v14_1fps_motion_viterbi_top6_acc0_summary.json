@@ -1,0 +1,21 @@
+{
+  "queries": 115,
+  "dino_mean_error_m": 27.27823659444422,
+  "dino_median_error_m": 20.040586345433592,
+  "dino_p90_error_m": 57.63404556542074,
+  "motion_viterbi_mean_error_m": 18.829827202391794,
+  "motion_viterbi_median_error_m": 15.214161450526598,
+  "motion_viterbi_p90_error_m": 36.04707486814179,
+  "motion_viterbi_max_error_m": 72.5289749351578,
+  "improved_queries": 61,
+  "worsened_queries": 29,
+  "unchanged_queries": 25,
+  "dino_weight": 4.0,
+  "inlier_weight": 1.0,
+  "ratio_weight": 1.0,
+  "max_step_m": 20.0,
+  "transition_weight": 4.0,
+  "acceleration_scale_m": 20.0,
+  "acceleration_weight": 0.0,
+  "candidate_limit": 6
+}

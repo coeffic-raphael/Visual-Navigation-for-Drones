@@ -1,0 +1,13 @@
+{
+  "queries": 115,
+  "dino_mean_error_m": 27.27823659444422,
+  "dino_median_error_m": 20.040586345433592,
+  "dino_p90_error_m": 57.63404556542074,
+  "temporal_mean_error_m": 19.148271580416974,
+  "temporal_median_error_m": 15.214161450526598,
+  "temporal_p90_error_m": 36.04707486814179,
+  "temporal_max_error_m": 72.5289749351578,
+  "improved_queries": 62,
+  "worsened_queries": 27,
+  "unchanged_queries": 26
+}

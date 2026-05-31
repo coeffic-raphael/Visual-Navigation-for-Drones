@@ -1,0 +1,152 @@
+# Visual Navigation for Drones
+
+This repository contains an easy-to-build implementation for the assignment's main GNSS-denied optical navigation problem:
+
+> Given a preprocessed reference flight with video and telemetry, estimate in a new flight, without GNSS at inference time, the GPS coordinate of the center point seen by the drone camera.
+
+The retained solution is an AnyLoc-inspired visual place recognition pipeline. It uses frozen DINOv2 image descriptors to retrieve candidate reference frames, SuperPoint + LightGlue to verify the best candidates locally, and a temporal Viterbi motion prior to choose a coherent path.
+
+## Current Best Result
+
+Main benchmark:
+
+- Reference database: DJI Mini 3 Pro `v11`, `v12`, `v13`
+- Query/test flight: DJI Mini 3 Pro `v14`
+- Sampling: `1 fps`
+- Target: projected ground coordinate of the video center
+
+Best retained result:
+
+| Method | Mean error | Median | P90 | Max |
+| --- | ---: | ---: | ---: | ---: |
+| DINOv2 global retrieval | 27.28 m | 20.04 m | 57.63 m | 180.52 m |
+| DINOv2 + LightGlue + Motion Viterbi | 18.83 m | 15.21 m | 36.05 m | 72.53 m |
+
+Main outputs:
+
+- `outputs/anyloc/dji_mini3_cross_v11_v12_v13_to_v14_1fps_motion_viterbi_top6_acc0_results.csv`
+- `outputs/anyloc/dji_mini3_cross_v11_v12_v13_to_v14_1fps_motion_viterbi_top6_acc0_summary.json`
+- `outputs/maps/dji_mini3_v14_google_earth_best_motion_viterbi.kml`
+- `outputs/debug/dji_mini3_v14_worst_retrieval_debug.html`
+
+## Repository Layout
+
+```text
+src/
+  telemetry_parser.py              DJI SRT to structured telemetry CSV
+  project_ground_point.py          geometric camera-center projection
+  build_frame_manifest.py          joins extracted frames with projected coordinates
+  anyloc_dino_retrieval.py         DINOv2 feature extraction and aggregation
+  frozen_dino_cross_retrieval.py   cross-flight visual retrieval
+  temporal_lightglue_rerank.py     LightGlue candidate verification
+  motion_viterbi_rerank.py         retained temporal path selection
+  export_google_earth_kml.py       Google Earth visualization
+  build_retrieval_debug_page.py    worst-error debug HTML
+  analyze_retrieval_failures.py    worst-error CSV extraction
+  make_failure_contact_sheet.py    visual contact sheet for failures
+  dji_mp4_metadata.py              optional DJI MP4 metadata extraction
+  trajectory_report.py             optional GNSS path SVG report
+  projection_report.py             optional camera-center projection SVG report
+
+data/raw/
+  DJI_v11.SRT, DJI_v12.SRT, DJI_v13.SRT, DJI_v14.SRT
+
+data/processed/
+  DJI_v*_telemetry.csv
+  DJI_v*_ground_projection_60deg.csv
+  DJI_v*_frame_manifest_1fps.csv
+  frames_v*_1fps/
+
+docs/
+  final_report.md
+  literature_review.md
+
+scripts/
+  run_best_pipeline.sh
+```
+
+## Setup
+
+Create and activate the environment:
+
+```bash
+python3 -m venv .venv-anyloc
+source .venv-anyloc/bin/activate
+pip install --upgrade pip
+pip install -r requirements-anyloc.txt
+```
+
+The project expects a local DINOv2 checkout and pretrained weights:
+
+```bash
+git clone https://github.com/facebookresearch/dinov2.git third_party/dinov2
+mkdir -p outputs/models/dinov2
+```
+
+Place the DINOv2 ViT-S/14 checkpoint at:
+
+```text
+outputs/models/dinov2/dinov2_vits14_pretrain.pth
+```
+
+LightGlue is installed from `requirements-anyloc.txt`.
+
+## Rebuild The Data
+
+If frames are missing, extract them at 1 fps:
+
+```bash
+ffmpeg -i data/raw/DJI_v11.mp4 -vf fps=1 data/processed/frames_v11_1fps/frame_%06d.jpg
+ffmpeg -i data/raw/DJI_v12.mp4 -vf fps=1 data/processed/frames_v12_1fps/frame_%06d.jpg
+ffmpeg -i data/raw/DJI_v13.mp4 -vf fps=1 data/processed/frames_v13_1fps/frame_%06d.jpg
+ffmpeg -i data/raw/DJI_v14.mp4 -vf fps=1 data/processed/frames_v14_1fps/frame_%06d.jpg
+```
+
+Parse SRT telemetry:
+
+```bash
+python src/telemetry_parser.py data/raw/DJI_v11.SRT data/processed/DJI_v11_telemetry.csv
+python src/telemetry_parser.py data/raw/DJI_v12.SRT data/processed/DJI_v12_telemetry.csv
+python src/telemetry_parser.py data/raw/DJI_v13.SRT data/processed/DJI_v13_telemetry.csv
+python src/telemetry_parser.py data/raw/DJI_v14.SRT data/processed/DJI_v14_telemetry.csv
+```
+
+Project the center of the video onto the ground. The Mini 3 Pro flights were documented as 60 degrees at about 119 m, so this benchmark uses a fixed 60 degree camera angle and trajectory-derived heading:
+
+```bash
+python src/project_ground_point.py data/processed/DJI_v11_telemetry.csv data/processed/DJI_v11_ground_projection_60deg.csv --camera-angle-deg 60 --camera-angle-source fixed --heading-source trajectory
+python src/project_ground_point.py data/processed/DJI_v12_telemetry.csv data/processed/DJI_v12_ground_projection_60deg.csv --camera-angle-deg 60 --camera-angle-source fixed --heading-source trajectory
+python src/project_ground_point.py data/processed/DJI_v13_telemetry.csv data/processed/DJI_v13_ground_projection_60deg.csv --camera-angle-deg 60 --camera-angle-source fixed --heading-source trajectory
+python src/project_ground_point.py data/processed/DJI_v14_telemetry.csv data/processed/DJI_v14_ground_projection_60deg.csv --camera-angle-deg 60 --camera-angle-source fixed --heading-source trajectory
+```
+
+Build frame manifests:
+
+```bash
+python src/build_frame_manifest.py data/processed/frames_v11_1fps data/processed/DJI_v11_ground_projection_60deg.csv data/processed/DJI_v11_frame_manifest_1fps.csv --fps 1
+python src/build_frame_manifest.py data/processed/frames_v12_1fps data/processed/DJI_v12_ground_projection_60deg.csv data/processed/DJI_v12_frame_manifest_1fps.csv --fps 1
+python src/build_frame_manifest.py data/processed/frames_v13_1fps data/processed/DJI_v13_ground_projection_60deg.csv data/processed/DJI_v13_frame_manifest_1fps.csv --fps 1
+python src/build_frame_manifest.py data/processed/frames_v14_1fps data/processed/DJI_v14_ground_projection_60deg.csv data/processed/DJI_v14_frame_manifest_1fps.csv --fps 1
+```
+
+## Run The Best Pipeline
+
+```bash
+./scripts/run_best_pipeline.sh
+```
+
+The script recomputes:
+
+1. DINOv2 descriptors and top-k retrieval.
+2. LightGlue verification of DINOv2 candidates.
+3. Motion-Viterbi selection of a coherent estimated path.
+4. Google Earth KML export.
+
+## Real-Time Interpretation
+
+The retained pipeline is compatible with a real-time version if preprocessing has already built the reference database. In real time, each incoming frame is embedded with frozen DINOv2, compared with the reference descriptors, reranked with LightGlue on a small top-k set, and passed to the temporal selector. GNSS is only used offline to build/evaluate the reference map; it is not used as an input for the query flight estimate.
+
+## Reports
+
+- `docs/final_report.md` explains the assignment mapping, pipeline, experiments, results, and limitations.
+- `docs/literature_review.md` summarizes AnyLoc and the supporting open-source methods used in this project.
