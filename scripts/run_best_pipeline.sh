@@ -56,6 +56,25 @@ BASE="outputs/anyloc/dji_mini3_cross_v11_v12_v13_to_v14_1fps"
   --reference-manifest data/processed/DJI_v13_frame_manifest_1fps.csv \
   --output outputs/maps/dji_mini3_v14_google_earth_best_motion_viterbi.kml
 
+"${PYTHON_BIN}" src/confidence_gate_results.py \
+  "${BASE}_motion_viterbi_top6_acc0_results.csv" \
+  --query-manifest data/processed/DJI_v14_frame_manifest_1fps.csv \
+  --sweep-csv outputs/anyloc/dji_mini3_confidence_gate_sweep.csv \
+  --decisions-csv outputs/anyloc/dji_mini3_confidence_gate_best_decisions.csv \
+  --summary-json outputs/anyloc/dji_mini3_confidence_gate_best_summary.json \
+  --good-error-m 20 \
+  --min-coverage 0.30 \
+  --max-longest-gap-s 60
+
+"${PYTHON_BIN}" src/smooth_path.py \
+  "${BASE}_motion_viterbi_top6_acc0_results.csv" \
+  data/processed/DJI_v14_frame_manifest_1fps.csv \
+  --reference-manifest v11=data/processed/DJI_v11_frame_manifest_1fps.csv \
+  --reference-manifest v12=data/processed/DJI_v12_frame_manifest_1fps.csv \
+  --reference-manifest v13=data/processed/DJI_v13_frame_manifest_1fps.csv \
+  --output-csv outputs/anyloc/dji_mini3_smoothed_results.csv \
+  --summary-json outputs/anyloc/dji_mini3_smoothed_summary.json
+
 mkdir -p outputs/figures
 
 "${PYTHON_BIN}" src/preliminary_experiment_report.py \
@@ -65,4 +84,5 @@ mkdir -p outputs/figures
   data/processed/DJI_v11_frame_manifest_1fps.csv \
   data/processed/DJI_v12_frame_manifest_1fps.csv \
   data/processed/DJI_v13_frame_manifest_1fps.csv \
+  --smoothed-csv outputs/anyloc/dji_mini3_smoothed_results.csv \
   --output outputs/figures/preliminary_experiment_v14.svg

@@ -3,7 +3,7 @@
 Generates an SVG that overlays:
   1. Drone GNSS path        — raw drone position from SRT telemetry
   2. Ground-truth center path — camera-center projected from angle + heading (SRT geometry)
-  3. Estimated center path  — pipeline output (DINOv2 + LightGlue + Motion Viterbi)
+  3. Estimated center path  — pipeline output (DINOv2 + LightGlue + Motion Viterbi + smoothing)
 
 Usage:
     python src/preliminary_experiment_report.py \
@@ -13,7 +13,8 @@ Usage:
         data/processed/DJI_v11_frame_manifest_1fps.csv \
         data/processed/DJI_v12_frame_manifest_1fps.csv \
         data/processed/DJI_v13_frame_manifest_1fps.csv \
-        outputs/figures/preliminary_experiment_v14.svg
+        --smoothed-csv outputs/anyloc/dji_mini3_smoothed_results.csv \
+        --output outputs/figures/preliminary_experiment_v14.svg
 """
 
 from __future__ import annotations
@@ -91,7 +92,7 @@ def build_estimated_path(
     origin_lat: float,
     origin_lon: float,
 ) -> list[tuple[float, float]]:
-    """Estimated camera-center from pipeline retrieval output."""
+    """Estimated camera-center from pipeline retrieval output (Viterbi lookup)."""
     points: list[tuple[float, float]] = []
     for row in results_rows:
         dataset = row["motion_viterbi_reference_dataset"]
@@ -102,6 +103,20 @@ def build_estimated_path(
         lat, lon = ref_lookup[key]
         points.append(latlon_to_xy(lat, lon, origin_lat, origin_lon))
     return points
+
+
+def build_smoothed_path(
+    smoothed_rows: list[dict[str, str]],
+    origin_lat: float,
+    origin_lon: float,
+) -> list[tuple[float, float]]:
+    """Estimated camera-center from Gaussian-smoothed Viterbi output."""
+    rows = sorted(smoothed_rows, key=lambda r: int(r["query_frame_count"]))
+    return [
+        latlon_to_xy(float(r["smoothed_lat"]), float(r["smoothed_lon"]), origin_lat, origin_lon)
+        for r in rows
+        if r.get("smoothed_lat")
+    ]
 
 
 def build_gt_center_path_1fps(
@@ -252,7 +267,7 @@ def write_svg(
     legend_y = H - 80
     lines.append(svg_legend_item(M, legend_y, "#1b6ca8", "Drone GNSS path (SRT)", dash="6 4"))
     lines.append(svg_legend_item(M + 260, legend_y, "#1a9850", "Ground-truth camera-center (geometry)"))
-    lines.append(svg_legend_item(M + 560, legend_y, "#d73027", "Estimated camera-center (pipeline)"))
+    lines.append(svg_legend_item(M + 560, legend_y, "#d73027", "Estimated camera-center (Viterbi + smoothing w=19)"))
     lines.append(
         f'<text x="{M}" y="{H - 52}" font-family="Arial, sans-serif" font-size="12" fill="#777">'
         f'Grey lines connect ground-truth to estimated camera-center per frame. '
@@ -297,6 +312,8 @@ def main() -> None:
                         help="Motion Viterbi results CSV from the pipeline")
     parser.add_argument("ref_manifests", type=Path, nargs="+",
                         help="1fps frame manifests for the reference flights (v11, v12, v13)")
+    parser.add_argument("--smoothed-csv", type=Path, default=None,
+                        help="Smoothed results CSV from smooth_path.py; if given, uses smoothed_lat/lon instead of Viterbi lookup")
     parser.add_argument("--output", type=Path,
                         default=Path("outputs/figures/preliminary_experiment_v14.svg"))
     args = parser.parse_args()
@@ -321,7 +338,12 @@ def main() -> None:
 
     drone_path = build_drone_path(proj_rows)
     gt_path = build_gt_center_path_1fps(query_manifest, origin_lat, origin_lon)
-    est_path = build_estimated_path(results_rows, ref_lookup, origin_lat, origin_lon)
+
+    if args.smoothed_csv is not None:
+        smoothed_rows = load_csv(args.smoothed_csv)
+        est_path = build_smoothed_path(smoothed_rows, origin_lat, origin_lon)
+    else:
+        est_path = build_estimated_path(results_rows, ref_lookup, origin_lat, origin_lon)
 
     stats = compute_errors(gt_path, est_path)
     print(f"query frames:   {len(gt_path)}")

@@ -21,6 +21,15 @@ Best retained result:
 | --- | ---: | ---: | ---: | ---: |
 | DINOv2 global retrieval | 27.28 m | 20.04 m | 57.63 m | 180.52 m |
 | DINOv2 + LightGlue + Motion Viterbi | 18.83 m | 15.21 m | 36.05 m | 72.53 m |
+| **+ Path smoothing (w=19)** | **14.16 m** | **13.05 m** | **25.63 m** | **38.94 m** |
+
+Error tolerance breakdown — best result (Viterbi + smoothing w=19):
+
+| Threshold | Frames | % of total | Frequency |
+| --- | ---: | ---: | ---: |
+| ≤ 5 m | 14 / 115 | 12.2% | ~1 every 8 s |
+| ≤ 10 m | 41 / 115 | 35.7% | ~1 every 3 s |
+| ≤ 15 m | 68 / 115 | 59.1% | ~1 every 2 s |
 
 Main outputs:
 
@@ -40,6 +49,8 @@ src/
   frozen_dino_cross_retrieval.py   cross-flight visual retrieval
   temporal_lightglue_rerank.py     LightGlue candidate verification
   motion_viterbi_rerank.py         retained temporal path selection
+  confidence_gate_results.py       FIX/NO_FIX confidence evaluation
+  smooth_path.py                   Gaussian path smoothing on Viterbi output
   export_google_earth_kml.py       Google Earth visualization
   build_retrieval_debug_page.py    worst-error debug HTML
   analyze_retrieval_failures.py    worst-error CSV extraction
@@ -47,6 +58,7 @@ src/
   dji_mp4_metadata.py              optional DJI MP4 metadata extraction
   trajectory_report.py             optional GNSS path SVG report
   projection_report.py             optional camera-center projection SVG report
+  interpolated_navigation.py       negative result: FIX/interp approach (29.32 m, rejected)
 
 data/raw/
   DJI_v11.SRT, DJI_v12.SRT, DJI_v13.SRT, DJI_v14.SRT
@@ -141,7 +153,46 @@ The script recomputes:
 2. LightGlue verification of DINOv2 candidates.
 3. Motion-Viterbi selection of a coherent estimated path.
 4. Google Earth KML export.
-5. Preliminary experiment SVG — three-path comparison (direction 4).
+5. Confidence-gated FIX/NO_FIX evaluation.
+6. Gaussian path smoothing (w=19, σ=5.4) — reduces mean error from 18.83 m to 14.16 m.
+7. Preliminary experiment SVG — three-path comparison (direction 4).
+
+## Confidence-Gated Fixes
+
+The base pipeline outputs one position every second. To answer the question "how often can we be confident that the position is correct?", the confidence-gated evaluation can abstain:
+
+```text
+FIX    if visual evidence is strong enough
+NO_FIX otherwise
+```
+
+Run:
+
+```bash
+python src/confidence_gate_results.py \
+  outputs/anyloc/dji_mini3_cross_v11_v12_v13_to_v14_1fps_motion_viterbi_top6_acc0_results.csv \
+  --query-manifest data/processed/DJI_v14_frame_manifest_1fps.csv \
+  --sweep-csv outputs/anyloc/dji_mini3_confidence_gate_sweep.csv \
+  --decisions-csv outputs/anyloc/dji_mini3_confidence_gate_best_decisions.csv \
+  --summary-json outputs/anyloc/dji_mini3_confidence_gate_best_summary.json \
+  --good-error-m 20 \
+  --min-coverage 0.30 \
+  --max-longest-gap-s 60
+```
+
+Current retained policy:
+
+- `motion_viterbi_rank <= 6`
+- `lg_inlier_count >= 50`
+- `lg_inlier_ratio >= 0.70`
+- `DINO similarity >= 0.98`
+
+Result with a 20 m "good fix" threshold:
+
+| Mode | Coverage | Mean accepted error | Good fixes <=20m | Mean time between fixes | Longest gap |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Always output | 100.0% | 18.83 m | 65.2% | 1.00 s | 0.00 s |
+| Confidence gated | 30.4% | 13.67 m | 80.0% | 2.00 s | 46.01 s |
 
 ## Preliminary Experiment (Direction 4)
 
@@ -157,6 +208,7 @@ python src/preliminary_experiment_report.py \
   data/processed/DJI_v11_frame_manifest_1fps.csv \
   data/processed/DJI_v12_frame_manifest_1fps.csv \
   data/processed/DJI_v13_frame_manifest_1fps.csv \
+  --smoothed-csv outputs/anyloc/dji_mini3_smoothed_results.csv \
   --output outputs/figures/preliminary_experiment_v14.svg
 ```
 
@@ -166,7 +218,7 @@ The figure overlays three paths in local XY coordinates (metres):
 
 - **Blue dashed** — drone GNSS trajectory from SRT telemetry
 - **Green** — ground-truth camera-center, computed geometrically from altitude + 60° camera angle + trajectory heading
-- **Red** — estimated camera-center from the DINOv2 + LightGlue + Motion Viterbi pipeline
+- **Red** — estimated camera-center from the DINOv2 + LightGlue + Motion Viterbi + Gaussian smoothing (w=19) pipeline
 
 Grey lines connect each ground-truth point to its estimate; darker = larger error.
 

@@ -129,7 +129,7 @@ The approach used in this project is a **Viterbi path selector** over the DINOv2
 
 This is conceptually related to **SeqSLAM** (Milford and Wyeth, ICRA 2012), which showed that enforcing sequential consistency over a sliding window dramatically improves localization recall even with weak per-frame descriptors. The key difference is that our method works with a sparse top-k candidate graph rather than a dense similarity matrix.
 
-Adding the Viterbi step reduces the mean error from 19.15 m (LightGlue reranking) to 18.83 m, with the main gain coming from reducing maximum errors (72.53 m vs 180.52 m for DINOv2 alone).
+Adding the Viterbi step reduces the mean error from 19.15 m (LightGlue reranking) to 18.83 m, with the main gain coming from reducing maximum errors (72.53 m vs 180.52 m for DINOv2 alone). A subsequent **Gaussian path smoothing** step (window w=19 frames, σ=5.4) then averages each estimated position with its temporal neighbours, pulling isolated wrong retrievals toward the correct neighbourhood. This reduces the mean error further to **14.16 m** and the maximum error from 72.53 m to 38.94 m.
 
 ---
 

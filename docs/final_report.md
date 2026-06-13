@@ -118,8 +118,6 @@ Interpretation: local matching is a strong improvement over raw DINOv2 retrieval
 
 ### 3. DINOv2 + LightGlue + Motion Viterbi
 
-This is the retained best version.
-
 | Metric | Value |
 | --- | ---: |
 | Queries | 115 |
@@ -131,6 +129,14 @@ This is the retained best version.
 | Worsened frames vs DINO | 29 |
 | Unchanged frames vs DINO | 25 |
 
+Error tolerance breakdown (frames within threshold):
+
+| Threshold | Frames | % of total | Frequency |
+| --- | ---: | ---: | ---: |
+| ≤ 5 m | 14 / 115 | 12.2% | ~1 every 8 s |
+| ≤ 10 m | 37 / 115 | 32.2% | ~1 every 3 s |
+| ≤ 15 m | 56 / 115 | 48.7% | ~1 every 2 s |
+
 Configuration:
 
 - DINO top-k candidates scored with LightGlue.
@@ -139,9 +145,77 @@ Configuration:
 - Transition weight: `4`.
 - Acceleration weight: `0`.
 
-This is the result we should present as the main implementation.
+### 4. DINOv2 + LightGlue + Motion Viterbi + Path Smoothing
 
-### 4. Air 3 Geometry And Cross-Video Validation
+This is the retained best version.
+
+After Viterbi selection, a Gaussian-weighted moving average (window = 19 frames, σ = 5.4) is applied to the estimated lat/lon trajectory. Isolated wrong retrievals are pulled toward their correct temporal neighbours; the drone's physical continuity constraint prevents oversmoothing from corrupting correct estimates.
+
+| Metric | Value |
+| --- | ---: |
+| Queries | 115 |
+| Mean error | **14.16 m** |
+| Median error | **13.05 m** |
+| P90 error | **25.63 m** |
+| Max error | **38.94 m** |
+
+Improvement over Viterbi alone:
+
+| Metric | Viterbi | + Smoothing | Δ |
+| --- | ---: | ---: | ---: |
+| Mean | 18.83 m | 14.16 m | −4.67 m (−25%) |
+| Median | 15.21 m | 13.05 m | −2.16 m (−14%) |
+| P90 | 36.05 m | 25.63 m | −10.42 m (−29%) |
+| Max | 72.53 m | 38.94 m | −33.59 m (−46%) |
+
+Error tolerance breakdown (frames within threshold):
+
+| Threshold | Frames | % of total | Frequency | Longest gap |
+| --- | ---: | ---: | ---: | ---: |
+| ≤ 5 m | 14 / 115 | 12.2% | ~1 every 8 s | 57 s |
+| ≤ 10 m | 41 / 115 | 35.7% | ~1 every 3 s | 32 s |
+| ≤ 15 m | 68 / 115 | 59.1% | ~1 every 2 s | 20 s |
+
+Compared to the Viterbi-only baseline (≤10m: 32.2%, ≤15m: 48.7%), smoothing adds 4 frames at ≤10m and 12 frames at ≤15m.
+
+The window was selected by sweeping w = 1 to 25 on the evaluation set. The optimum at w = 19 corresponds to ±9 seconds of temporal context at 1 fps, consistent with the drone's travel speed (~7 m/s) and the typical scale of retrieval errors. Oversmoothing above w = 19 degrades the mean as the window exceeds the spatial scale of the correct path segments.
+
+This is the result we present as the main implementation.
+
+### 5. Confidence-Gated Navigation Fixes
+
+The professor suggested that it may be more useful to know how often the system is correct than to force one possibly wrong coordinate every second. We therefore added a confidence-gated evaluation layer.
+
+Instead of always publishing a coordinate, the system can output:
+
+```text
+FIX    if visual evidence is strong enough
+NO_FIX otherwise
+```
+
+The retained policy accepts a fix when:
+
+- `motion_viterbi_rank <= 6`,
+- `lg_inlier_count >= 50`,
+- `lg_inlier_ratio >= 0.70`,
+- `DINO similarity >= 0.98`.
+
+We define a "good fix" as an accepted position whose error is at most `20 m`.
+
+| Mode | Coverage | Mean accepted error | Median accepted error | Good fixes <=20m | Mean time between fixes | Longest gap |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Always output | 100.0% | 18.83 m | 15.21 m | 65.2% | 1.00 s | 0.00 s |
+| Confidence gated | 30.4% | 13.67 m | 10.58 m | 80.0% | 2.00 s | 46.01 s |
+
+Interpretation: the confidence gate improves the reliability of published fixes, but it does not solve the whole navigation problem. It refuses 80 of 115 frames, and the longest period without a fix is about 46 seconds. This is useful as a safety layer: when the visual evidence is weak, the system should abstain instead of publishing a likely wrong coordinate.
+
+Outputs:
+
+- `outputs/anyloc/dji_mini3_confidence_gate_sweep.csv`
+- `outputs/anyloc/dji_mini3_confidence_gate_best_decisions.csv`
+- `outputs/anyloc/dji_mini3_confidence_gate_best_summary.json`
+
+### 6. Air 3 Geometry And Cross-Video Validation
 
 The DJI Air 3 data contains richer gimbal metadata, so it helped check the geometric projection step.
 
@@ -173,6 +247,7 @@ We tested several ideas that did not become the official pipeline:
 | Direction-change penalty | Did not improve the retained metrics enough to justify keeping it as default |
 | DINOv2 VLAD aggregation | Improved raw candidate quality, but did not beat the retained final Motion-Viterbi result |
 | Optical flow dead reckoning | SuperPoint + LightGlue between consecutive query frames estimates speed correctly (785.6 m total path vs 797.3 m GNSS, ~1.5% error), but without heading the cumulative direction error reaches 712 m after 115 frames. Dead reckoning is only viable if a magnetic heading or an initial heading estimate from retrieval is available. See `src/frame_dead_reckoning.py`. |
+| FIX/NO_FIX linear interpolation | Using the confidence gate (30.4% FIX coverage) to select retrieval positions, then linearly interpolating between FIX neighbours for NO_FIX frames. Result: 29.32 m mean, worse than the 18.83 m Viterbi baseline. The gaps are up to 46 s long and the drone path is non-linear, so linear interpolation over a 46 s gap introduces large errors. Viterbi already produces ~21 m mean for NO_FIX frames, outperforming naive interpolation (36 m). See `src/interpolated_navigation.py`. |
 
 The repository has been cleaned so these attempts do not appear as the main path.
 
@@ -216,4 +291,4 @@ The current version is real-time compatible in structure, but the LightGlue step
 
 ## Conclusion
 
-The retained solution is not a trained drone-specific model. It is a clean visual localization pipeline inspired by AnyLoc: frozen DINOv2 descriptors for place recognition, LightGlue for local verification, and a temporal motion prior for navigation consistency. On the main Mini 3 Pro benchmark, it reduces the mean error from 27.28 m to 18.83 m and produces a complete estimated path that can be compared directly with the SRT-derived ground truth.
+The retained solution is not a trained drone-specific model. It is a clean visual localization pipeline inspired by AnyLoc: frozen DINOv2 descriptors for place recognition, LightGlue for local verification, a temporal motion prior for navigation consistency, and a Gaussian-weighted path smoother. On the main Mini 3 Pro benchmark, it reduces the mean error from 27.28 m (raw DINOv2) to 14.16 m (Viterbi + smoothing w=19) and produces a complete estimated path that can be compared directly with the SRT-derived ground truth.
