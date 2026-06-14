@@ -74,7 +74,8 @@ docs/
   literature_review.md
 
 scripts/
-  run_best_pipeline.sh
+  setup.sh                     one-command preprocessing (frames + telemetry + manifests)
+  run_best_pipeline.sh         one-command pipeline (DINOv2 → LightGlue → Viterbi → SVG)
 ```
 
 ## Setup
@@ -100,6 +101,14 @@ Place the DINOv2 ViT-S/14 checkpoint at:
 ```text
 outputs/models/dinov2/dinov2_vits14_pretrain.pth
 ```
+
+Place your raw videos and SRT files in `data/raw/` (DJI_v11.mp4, DJI_v11.SRT, … v14), then run:
+
+```bash
+./scripts/setup.sh
+```
+
+This extracts frames at 1 fps, parses SRT telemetry, projects ground center points, and builds frame manifests for all four videos. Skip this step if the `data/processed/` manifests are already present.
 
 LightGlue is installed from `requirements-anyloc.txt`.
 
