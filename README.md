@@ -89,6 +89,24 @@ scripts\run_final_realtime_test1.bat
 
 This runs only the V7 Test1 pipeline instead of all leave-one-out tests. Use this for a faster sanity check after the project has already been set up.
 
+### Optional — Run the fast preview configuration
+
+```bat
+scripts\run_v7_all_tests_fast.bat --only DJI_Test1_100m
+```
+
+The fast runner writes to `outputs/realtime_fast/` and does not overwrite the final `outputs/realtime/` results. It lowers the expensive runtime settings for speed/accuracy experiments:
+
+```text
+sample-fps: 2 -> 1
+lightglue-every: 2 -> 4
+global-topk: 100 -> 60
+candidate-pool-limit: 90 -> 60
+lg-topk: 12 -> 8
+```
+
+Use the fast runner for experimentation only, not for the final reported V7 result.
+
 ### Output location
 
 After the run, results are written under:
@@ -389,7 +407,24 @@ This is the final realtime result. The stronger offline result below is kept onl
 
 ---
 
-## 10. Best Offline Result Kept for Comparison
+## 10. All-Video Realtime Validation Results
+
+After the main V7 realtime pipeline was run on the available videos, the following look-at / camera-center results were produced. These leave-one-out tests evaluate each reference video as a query while excluding that same video from the reference set.
+
+| Query video | Frames processed | Valid estimates | NO_ESTIMATE frames | Coverage | Mean error | Median error | P90 error | P95 error | % under 100 m | % under 50 m |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `DJI_0006` | 1661 | 1288 | 373 | 77.54% | 74.48 m | 59.33 m | 148.62 m | 176.47 m | 75.16% | 43.71% |
+| `DJI_0007` | 520 | 465 | 55 | 89.42% | 70.57 m | 65.29 m | 127.02 m | 139.92 m | 74.19% | 43.01% |
+| `DJI_0008` | 1661 | 1384 | 277 | 83.32% | 87.46 m | 56.14 m | 155.33 m | 195.20 m | 70.88% | 45.01% |
+| `DJI_0009` | 229 | 217 | 12 | 94.76% | 28.64 m | 18.84 m | 67.83 m | 82.25 m | 98.16% | 81.11% |
+
+`DJI_0010_0011_merged` has no query SRT truth, so it is exported as estimated paths in KML but does not have accuracy metrics.
+
+The table reports look-at / camera-center error, which is the main assignment target: the coordinate of the center point of the video projected onto the ground.
+
+---
+
+## 11. Best Offline Result Kept for Comparison
 
 The strongest Test1 result is still offline/postprocessed, not realtime.
 
@@ -402,7 +437,7 @@ Best offline Test1 result:
 This result is reported for comparison only. It is not the final realtime pipeline.
 ---
 
-## 11. Scale / Height Handling
+## 12. Scale / Height Handling
 
 The project handles altitude-induced image scale in two ways.
 
@@ -422,7 +457,7 @@ This is optional and not enabled by default in the final all-tests runner. It sh
 
 ---
 
-## 12. Main Files
+## 13. Main Files
 
 ```text
 src/
@@ -439,6 +474,7 @@ tools/
   export_final_realtime_kml.py
   make_scale_aware_reference_manifest.py
   run_v7_all_tests_good.py
+  run_v7_all_tests_fast.py
 
 scripts/
   run_v7_all_tests_autoprep.bat
@@ -449,7 +485,7 @@ scripts/
 ---
 
 
-## 13. Troubleshooting
+## 14. Troubleshooting
 
 ### `ModuleNotFoundError: sklearn` or `ModuleNotFoundError: lightglue`
 
