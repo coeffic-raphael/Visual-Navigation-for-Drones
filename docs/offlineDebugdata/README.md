@@ -11,7 +11,11 @@ The pipeline then was roughly this:
     → temporal consensus
     → local/context reruns
     → fixed grid regions
-    → path consistency / candidate upgrade
+    → dominant seed / seed support validation
+    → suffix/tail rescue
+    → path-guided local rerun
+    → path consistency
+    → candidate upgrade top25
     → final full-path KML
 
 These are ideas that were implemented and tested in an offline manner and may be somehow implemented in a realtime fashion:
@@ -49,13 +53,13 @@ This helped because DINO features are much stronger than simple ORB/color retrie
 
 ## Multiscale retrieval ##
 
-This was added to try and tackle the dron height difference issue where DINOv2 and AnyLoc would treat the images as if they are 
+This was added to try and tackle the drone height difference issue where DINOv2 and AnyLoc would treat the images as if they are 
 at the same height.
 
 A lower drone sees buildings/trees larger. A higher reference flight sees them smaller.
 
 Additionally the viewable area by the 30m height drone is much smaller then the one of a 119m height drone, so only a small 
-section of the refrence image should be refrenced and not hte whole image.  
+section of the refrence image should be refrenced and not the whole image.  
 
 So we tried query scales like:
 
@@ -145,6 +149,89 @@ Make local reruns more stable and prevent the search region from drifting.
 
 This helped with cases where the path started in the wrong area or jumped to a visually similar wrong area.
 
+
+## Dominant seed / seed support validation
+
+After fixed grid regions, we tried to find the most reliable seed path from the strongest accepted matches.
+
+The idea was that even if many frames were weak or noisy, some frames had much stronger visual and geometric support. These strong frames could act as seeds for the rest of the trajectory.
+
+A dominant seed was usually a region or path segment that appeared repeatedly with good match quality.
+
+We then checked whether the seed was supported by nearby frames.
+
+It used:
+
+high-confidence accepted frames
+repeated fixed-grid regions
+nearby temporal support
+visual/geometric match quality
+
+The idea was:
+
+one strong frame alone is not enough
+but several strong frames in the same region probably indicate the correct path
+
+This helped avoid choosing a wrong path just because one visually similar frame had a good score.
+
+## Prefix / suffix tail rescue
+
+After the fixed grid and seed-support stages, we had cases where the middle of the path looked reasonable, but the final part and the beginning of the video drifted, jumped, or got lost.
+
+This is mainly because of the takeoff and landing part which would quickly change height and mess up our detection.
+
+which can hur really badly because we built our paths using context and if our beginning failed it could lead to cascading failures.
+
+The suffix/tail rescue stage tried to repair only that bad section instead of rerunning the entire video.
+
+It used:
+
+previous trusted anchors
+dominant path regions
+fixed grid context
+nearby plausible candidate regions
+
+The idea was:
+
+good path
+→ good path
+→ good path
+→ tail starts drifting or jumping
+
+or the opposite for the beginning tail.
+
+We would say:
+
+this section should probably continue near the trusted path,
+not suddenly jump to a far visually similar area
+
+Then we reran or replaced only the weak tail frames using the trusted earlier path as context.
+
+This was also an offline/post-processing step because it used knowledge that the ending of the full trajectory was bad.
+
+## Path-guided local rerun
+
+After finding a stable path or dominant seed, we used that path to guide local reruns.
+
+Instead of rerunning weak frames against the entire reference set, the path-guided local rerun searched only in regions that were plausible according to the trusted path.
+
+This was useful because many wrong matches came from visually similar but geographically wrong areas.
+
+It used:
+
+the dominant seed path
+fixed grid regions
+nearby accepted anchors
+candidate regions around the trusted path
+
+The idea was:
+
+if the path is stable in this area,
+then weak frames between or near those anchors should probably be searched nearby,
+not globally across the entire map
+
+This made reruns cheaper and reduced the chance of jumping to a wrong but visually similar region.
+
 ## Path consistency overlay/filter ##
 
 This stage rejected isolated jumps.
@@ -180,9 +267,12 @@ That way we might optimize dedicating more time to bad frames and less time to e
     + strict geometric gating
     + temporal consensus
     + local fixed-grid reruns
+    + dominant seed / seed support validation
+    + prefix/suffix tail rescue
+    + path-guided local rerun
     + path consistency / candidate upgrade
 
-    It was designed mainly on:
+    It was designed mainly for:
 
     DJI_0010
     DJI_0011
