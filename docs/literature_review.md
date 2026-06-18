@@ -21,6 +21,10 @@ The final system uses a training-free Visual Place Recognition approach inspired
 
 ## 1. Visual Place Recognition
 
+**Paper:** Schubert et al., "Visual Place Recognition: A Tutorial," 2023.  
+**Source:** https://arxiv.org/abs/2303.03281  
+**Benchmark/code:** https://github.com/MubarizZaffar/VPR-Bench
+
 Visual Place Recognition (VPR) is the closest computer-vision formulation of the assignment. A database of reference images is built, each with a known position. A query image is then matched to the closest visual place.
 
 This maps directly to the project:
@@ -39,6 +43,7 @@ The main challenge is that low-altitude drone videos contain repeated or weakly 
 ## 2. NetVLAD — Foundational Learning-Based VPR
 
 **Paper:** Arandjelovic et al., "NetVLAD: CNN Features for Image Retrieval," CVPR 2016.  
+**Paper URL:** https://arxiv.org/abs/1511.07247  
 **Code:** https://github.com/Relja/netvlad
 
 NetVLAD introduced a differentiable VLAD aggregation layer for place recognition. It is a classic baseline for learned image retrieval and inspired many later supervised VPR methods.
@@ -50,9 +55,11 @@ However, NetVLAD depends on training data. For this project, training on the ref
 ## 3. MixVPR and CosPlace — Strong Supervised VPR
 
 **MixVPR:** Ali-bey et al., "MixVPR: Feature Mixing for Visual Place Recognition," WACV 2023.  
+**MixVPR paper URL:** https://arxiv.org/abs/2303.02190  
 **Code:** https://github.com/amaralibey/MixVPR
 
 **CosPlace:** Berton et al., "Rethinking Visual Geo-Localization for Large-Scale Applications," CVPR 2022.  
+**CosPlace paper URL:** https://arxiv.org/abs/2204.02287  
 **Code:** https://github.com/gmberton/CosPlace
 
 MixVPR and CosPlace are strong supervised VPR approaches. They perform well on urban benchmarks, but supervised urban VPR does not necessarily transfer to low-altitude drone data.
@@ -68,6 +75,7 @@ The project does not train one of these models because:
 ## 4. AnyLoc — Main Methodological Inspiration
 
 **Paper:** Keetha et al., "AnyLoc: Towards Universal Visual Place Recognition," RA-L / ICRA 2024.  
+**Paper URL:** https://arxiv.org/abs/2308.00688  
 **Code:** https://github.com/AnyLoc/AnyLoc  
 **PDF:** https://anyloc.github.io/assets/AnyLoc.pdf
 
@@ -101,6 +109,7 @@ VLAD with an aerial-domain vocabulary remains a future improvement.
 ## 5. DINOv2
 
 **Paper:** Oquab et al., "DINOv2: Learning Robust Visual Features Without Supervision," 2023.  
+**Paper URL:** https://arxiv.org/abs/2304.07193  
 **Code:** https://github.com/facebookresearch/dinov2
 
 DINOv2 is the frozen visual backbone. It produces patch tokens from a Vision Transformer trained with self-supervised learning.
@@ -119,7 +128,10 @@ In the implementation, `src/anyloc_dino_retrieval.py` and related scripts extrac
 ## 6. SuperPoint and LightGlue
 
 **SuperPoint paper:** DeTone et al., "SuperPoint: Self-Supervised Interest Point Detection and Description," CVPRW 2018.  
+**SuperPoint paper URL:** https://arxiv.org/abs/1712.07629  
+**SuperPoint code:** https://github.com/magicleap/SuperPointPretrainedNetwork  
 **LightGlue paper:** Lindenberger et al., "LightGlue: Local Feature Matching at Light Speed," ICCV 2023.  
+**LightGlue paper URL:** https://arxiv.org/abs/2306.13643  
 **Code:** https://github.com/cvg/LightGlue
 
 DINOv2 global retrieval finds visually similar frames, but global similarity alone can select wrong places. LightGlue checks local geometric evidence by matching SuperPoint keypoints between a query and a candidate reference image.
@@ -138,6 +150,12 @@ This local verification step is essential because many campus/drone scenes repea
 ---
 
 ## 7. Homography and RANSAC Verification
+
+**Source:** OpenCV, "Feature Matching + Homography to find Objects."  
+**Source URL:** https://opencv24-python-tutorials.readthedocs.io/en/latest/py_tutorials/py_feature2d/py_feature_homography/py_feature_homography.html  
+**Related UAV source:** Gurgu et al., "Vision-based GNSS-Free Localization for UAVs in the Wild," 2022.  
+**Paper URL:** https://arxiv.org/abs/2210.09727  
+**Code:** https://github.com/TIERS/wildnav
 
 A homography maps points from one image plane to another when the scene is approximately planar or when the camera undergoes rotation around a center. Drone views are not perfectly planar, but homography still provides useful evidence for whether two images share a geometrically consistent region.
 
@@ -168,6 +186,10 @@ In the current final pipeline, scale-aware reference preprocessing is not enable
 
 ---
 ## 8. Temporal Sequence Localization
+
+**Paper/source:** Milford and Wyeth, "SeqSLAM: Visual Route-Based Navigation," ICRA 2012.  
+**Open-source implementation:** https://openslam-org.github.io/openseqslam.html  
+**Python port:** https://github.com/tmadl/pySeqSLAM
 
 A drone flight is a sequence, not a set of independent images. Consecutive estimates should not jump randomly across the map.
 
@@ -201,6 +223,10 @@ The key design decision is that the system is allowed to abstain. It is better t
 
 ## 10. Optical Flow
 
+**Paper:** Teed and Deng, "RAFT: Recurrent All-Pairs Field Transforms for Optical Flow," ECCV 2020.  
+**Code:** https://github.com/princeton-vl/RAFT  
+**Tutorial/source:** https://docs.pytorch.org/vision/0.12/auto_examples/plot_optical_flow.html
+
 Optical flow estimates image motion between consecutive frames. The project tested flow as a dead-reckoning cue, but pure flow is not enough for global localization because:
 
 - pixel flow depends on altitude,
@@ -222,6 +248,8 @@ This is exactly the advantage of AnyLoc-style frozen features: the reference fli
 
 ## 12. How the Literature Maps to the Final System
 
+**Sources:** This mapping summarizes the cited literature above: AnyLoc, DINOv2, LightGlue, OpenCV homography/RANSAC, SeqSLAM/OpenSeqSLAM, and RAFT.
+
 | Literature idea                 | Final system component                          |
 | ---                             | ---                                             |
 | AnyLoc / training-free VPR      | Frozen DINOv2 reference/query descriptors       |
@@ -239,22 +267,24 @@ This is exactly the advantage of AnyLoc-style frozen features: the reference fli
 
 ### AnyLoc VLAD
 
+**Source:** https://github.com/AnyLoc/AnyLoc
+
 The most direct improvement is to implement the stronger AnyLoc configuration: DINOv2 patch tokens aggregated with VLAD and an aerial-domain vocabulary.
 
-### Better camera pose metadata
-
-Exact yaw/gimbal metadata would improve both ground-truth projection and query/reference pose reasoning.
-
 ### Landmark-aware localization
+
+**Related source:** Gurgu et al., "Vision-based GNSS-Free Localization for UAVs in the Wild."  
+**Paper URL:** https://arxiv.org/abs/2210.09727  
+**Code:** https://github.com/TIERS/wildnav
 
 A visually correct match can still be pose-wrong. Future work could explicitly estimate landmark position and camera pose rather than copying reference-frame pose.
 
 ### Faster realtime deployment
 
+**Source:** LightGlue, "Local Feature Matching at Light Speed."  
+**Paper URL:** https://arxiv.org/abs/2306.13643  
+**Code:** https://github.com/cvg/LightGlue
+
 LightGlue remains the compute bottleneck. A deployed system could run DINO every frame but LightGlue only on selected candidate frames.
 
 ---
-
-## Conclusion
-
-The literature supports the final design: frozen DINOv2 features provide a training-free VPR foundation, LightGlue and homography improve local reliability, and temporal/region logic turns frame retrieval into a realtime navigation system. The final V7 spread-consistency pipeline is therefore a practical adaptation of modern VPR and local feature matching to GNSS-denied drone navigation.
